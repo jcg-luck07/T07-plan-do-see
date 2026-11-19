@@ -145,3 +145,12 @@ dialog .card { border: 0; margin: 0; border-radius: 0; }
   .diaryhead h2 { font-size: 1.2rem; }
   th, td { padding: 6px; }
 }
+
+/* ---- T07: 로그인 화면·계정 ---- */
+.loginbox { max-width: 420px; margin: 40px auto; padding: 22px; background: var(--card, #fff); border: 1px solid #d7dce2; border-radius: 12px; }
+.loginbox[hidden], .shell[hidden], .who[hidden] { display: none; }
+.who { margin-left: auto; font-size: .9rem; display: inline-flex; gap: 8px; align-items: center; }
+table.plain { border-collapse: collapse; width: 100%; margin: 8px 0; }
+table.plain th, table.plain td { border: 1px solid #d7dce2; padding: 6px 8px; text-align: left; vertical-align: top; }
+table.plain th { background: #f3f5f8; white-space: nowrap; }
+.card.danger { border-color: var(--bad); }

@@ -10,19 +10,35 @@
   <header class="topbar">
     <span class="logo" aria-hidden="true">☑</span>
     <h1>Plan-Do-See 다이어리</h1>
+    <span class="who" id="who" hidden><span id="whoname"></span> <button type="button" id="logout">로그아웃</button></span>
   </header>
-  <div class="shell">
+  <section id="login" class="loginbox" aria-label="로그인">
+    <h2 id="login-title">로그인</h2>
+    <p class="muted">내 계획과 기록은 로그인한 뒤에만 보여요. 계정마다 자료가 따로 저장돼요.</p>
+    <form id="loginform" class="grid">
+      <label class="wide">아이디 (영문 소문자·숫자·_ . - , 4~30자)<input name="username" autocomplete="username" required maxlength="30"></label>
+      <label class="wide">비밀번호 (가입할 때는 8자 이상)<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label>
+      <p class="error wide" id="login-err" role="alert"></p>
+      <div class="row wide">
+        <button class="primary" type="submit" id="login-submit">로그인</button>
+        <button type="button" id="login-toggle">계정 만들기</button>
+      </div>
+    </form>
+  </section>
+  <div class="shell" id="shell" hidden>
     <aside class="sidenav">
       <nav id="nav" aria-label="화면 이동">
         <a href="#cal" data-tab="today" id="nav-today"><span aria-hidden="true">⌂</span> 오늘</a>
         <a href="#cal" data-tab="cal"><span aria-hidden="true">▦</span> 다이어리</a>
         <a href="#list" data-tab="list"><span aria-hidden="true">≡</span> 계획(할 일) 목록</a>
         <a href="#see" data-tab="see"><span aria-hidden="true">▮</span> 통계·돌아보기</a>
+        <a href="#obs" data-tab="obs"><span aria-hidden="true">5</span> 5일 관찰</a>
+        <a href="#acct" data-tab="acct"><span aria-hidden="true">☺</span> 내 계정</a>
         <a href="/api/export" download="plan-do-see-export.json" id="export"><span aria-hidden="true">⇩</span> 내 자료 내보내기</a>
       </nav>
     </aside>
     <div class="content">
-      <p class="notice" id="notice" role="note">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</p>
+      <p class="notice" id="notice" role="note">로그인한 계정의 자료만 보이고, 다른 계정의 자료는 서버가 막아요. 그래도 비밀번호나 주민번호 같은 민감한 정보는 적지 마세요.</p>
       <div class="cols">
         <aside id="side" aria-label="요약"></aside>
         <main id="app" aria-live="polite">불러오는 중…</main>

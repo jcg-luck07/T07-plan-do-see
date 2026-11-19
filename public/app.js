@@ -34,6 +34,7 @@
     });
     let data = null;
     try { data = await res.json(); } catch (e) { /* 내용 없음 */ }
+    if (res.status === 401 && !path.startsWith('auth/')) { showLogin(); throw new Error('로그인이 필요합니다.'); }
     if (!res.ok) throw new Error((data && data.error) || '요청에 실패했습니다.');
     return data;
   }
@@ -67,7 +68,7 @@
     const raw = location.hash.replace(/^#/, '') || 'cal';
     const [name, qs] = raw.split('?');
     const OLD = { plans: 'list', plan: 'list', tasks: 'list', review: 'see', do: 'list' }; // 예전 주소도 열리게
-    const tab = ['cal', 'list', 'see'].includes(name) ? name : OLD[name] || 'cal';
+    const tab = ['cal', 'list', 'see', 'obs', 'acct'].includes(name) ? name : OLD[name] || 'cal';
     return { tab, q: Object.fromEntries(new URLSearchParams(qs || '')) };
   }
   function go(tab, q = {}) {
@@ -98,6 +99,8 @@
     try {
       const view = tab === 'list' ? await tasksView(q)
         : tab === 'see' ? await reviewView(q)
+        : tab === 'obs' ? await obsView()
+        : tab === 'acct' ? await acctView()
         : await calView(q);
       app.replaceChildren(view);
       if (sameView) window.scrollTo(0, keepY);
@@ -626,5 +629,140 @@
     return box;
   }
 
-  render();
+  // ---------- 5일 관찰 ----------
+  async function obsView() {
+    const r = await api('experiment');
+    const box = h('div', {}, h('h2', {}, '5일 관찰'));
+    const refresh = () => render();
+    if (!r.experiment) {
+      box.append(h('p', { class: 'muted' }, '1일차에 답하려는 질문 한 문장과 계획 규칙을 정해요. 지표(일별 계획 완료 개수, 단위 개)와 계산 규칙은 정해져 있고, 한 번 정하면 바꿀 수 없어요.'));
+      const f = h('form', { class: 'grid card' },
+        field('1일차 질문 (한 문장)', h('input', { name: 'question', required: true, maxlength: 200, class: 'wide', value: '하루에 계획을 몇 개 끝낼 수 있을까?' })),
+        field('계획 규칙 (사람이 읽는 문장)', h('input', { name: 'plan_rule', required: true, maxlength: 200, class: 'wide', value: '하루(마감일 기준)에 계획은 최대 5개까지 세운다' })),
+        field('하루 최대 계획 수 (서버가 지켜요)', h('input', { name: 'max_per_day', type: 'number', min: 1, max: 50, value: 5 })),
+        h('div', { class: 'row wide' }, h('button', { class: 'primary', type: 'submit' }, '질문과 지표 고정하기')));
+      f.addEventListener('submit', (ev) => { ev.preventDefault(); guarded(f.querySelector('[type=submit]'), async () => { await api('experiment', { method: 'POST', body: formData(f) }); toast('고정했어요.'); refresh(); }); });
+      box.append(f);
+      return box;
+    }
+    const e = r.experiment;
+    const rows = [['질문', e.question], ['지표', e.metric], ['단위', e.unit], ['계산 규칙', e.calc_rule], ['결측값', e.missing_rule],
+      ['중복값', e.duplicate_rule], ['이상값', e.outlier_rule], ['반올림', e.rounding_rule], ['주 시작 요일', e.week_start],
+      ['지금 계획 규칙', e.plan_rule + ` (하루 최대 ${e.max_per_day}개)`]];
+    box.append(h('div', { class: 'card' }, h('table', { class: 'plain' }, rows.map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v))))));
+
+    const today = await api('today');
+    const full = r.logs.length >= 5 && r.logs.every((l) => l.log_date !== today.today);
+    box.append(h('h3', {}, `하루 기록 (${r.logs.length}/5일)`));
+    box.append(h('table', { class: 'plain' },
+      h('tr', {}, ['일차', '날짜', '완료 개수(개)', '그날 마감 계획', '규칙 버전', '메모'].map((x) => h('th', {}, x))),
+      r.logs.map((l) => h('tr', {}, h('td', {}, l.day_no + '일차'), h('td', {}, l.log_date),
+        h('td', {}, l.done_count + (l.outlier ? ' (이상값 표시)' : '')), h('td', {}, l.planned_count), h('td', {}, 'v' + l.rule_version), h('td', {}, l.note)))));
+    if (!r.logs.length) box.append(h('p', { class: 'muted' }, '아직 기록이 없어요. 하루가 끝날 때 아래 버튼을 눌러요.'));
+    if (!full) {
+      const nf = h('form', { class: 'row card' }, h('input', { name: 'note', maxlength: 300, placeholder: '오늘 한 줄 메모 (비워도 돼요)' }),
+        h('button', { class: 'primary', type: 'submit' }, '오늘 마감하고 기록하기'));
+      nf.addEventListener('submit', (ev) => { ev.preventDefault(); guarded(nf.querySelector('[type=submit]'), async () => { await api('experiment/day', { method: 'POST', body: formData(nf) }); toast('오늘 기록을 남겼어요.'); refresh(); }); });
+      box.append(nf, h('p', { class: 'muted' }, '같은 날 다시 누르면 새 줄 없이 그날 기록을 덮어써요. 서울 날짜 기준이에요.'));
+    }
+
+    const s = r.summary;
+    box.append(h('h3', {}, '합계와 평균 (같은 지표·같은 단위·같은 계산 규칙)'));
+    box.append(h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, h('b', {}, s.total + '개'), h('span', {}, `합계 (${s.days}일)`)),
+      h('div', { class: 'stat' }, h('b', {}, s.average === null ? '-' : s.average + '개'), h('span', {}, '하루 평균')),
+      h('div', { class: 'stat' }, h('b', {}, s.before.average === null ? '-' : s.before.average + '개'), h('span', {}, `규칙 바꾸기 전 평균 (${s.before.days}일)`)),
+      h('div', { class: 'stat' }, h('b', {}, s.after.average === null ? '-' : s.after.average + '개'), h('span', {}, `규칙 바꾼 뒤 평균 (${s.after.days}일)`))));
+    if (s.diff !== null) box.append(h('p', {}, `바꾼 뒤 − 바꾸기 전 = ${s.diff > 0 ? '+' : ''}${s.diff}개 (좋아졌든 나빠졌든 그대로 남겨요)`));
+
+    box.append(h('h3', {}, '계획 규칙 바꾸기 (딱 한 번)'));
+    if (r.rule_change) {
+      const c = r.rule_change;
+      box.append(h('div', { class: 'card' },
+        h('p', {}, `바꾼 시각: ${fmtTime(c.changed_at)} (서울)`),
+        h('p', {}, `이전 규칙: ${c.old_rule} (최대 ${c.old_max}개)`), h('p', {}, `새 규칙: ${c.new_rule} (최대 ${c.new_max}개)`),
+        h('p', {}, `이유: ${c.reason}`),
+        h('p', { class: 'muted' }, `기록 근거: 1일차 기록 #${c.day1_log_id}, 2일차 기록 #${c.day2_log_id} 뒤, 3일차 기록 앞`)));
+    } else if (r.logs.length === 2) {
+      const cf = h('form', { class: 'grid card' },
+        field('새 계획 규칙 (문장)', h('input', { name: 'new_rule', required: true, maxlength: 200, class: 'wide' })),
+        field('새 하루 최대 계획 수', h('input', { name: 'new_max_per_day', type: 'number', min: 1, max: 50, value: e.max_per_day })),
+        field('바꾼 이유', h('input', { name: 'reason', required: true, maxlength: 300, class: 'wide' })),
+        h('div', { class: 'row wide' }, h('button', { class: 'primary', type: 'submit' }, '규칙 바꾸기')));
+      cf.addEventListener('submit', (ev) => { ev.preventDefault(); guarded(cf.querySelector('[type=submit]'), async () => {
+        if (!confirm('규칙은 한 번만 바꿀 수 있어요. 바꿀까요?')) return;
+        await api('experiment/rule-change', { method: 'POST', body: formData(cf) }); toast('규칙을 바꿨어요.'); refresh(); }); });
+      box.append(cf);
+    } else {
+      box.append(h('p', { class: 'muted' }, r.logs.length < 2 ? '2일차 기록을 남긴 뒤, 3일차 기록 전에 바꿀 수 있어요.' : '3일차 기록이 이미 있어서 더는 바꿀 수 없어요.'));
+    }
+    return box;
+  }
+
+  // ---------- 내 계정 ----------
+  async function acctView() {
+    const me = await api('auth/me');
+    const box = h('div', {}, h('h2', {}, '내 계정'), h('p', {}, `로그인한 아이디: ${me.user.username}`));
+    const pf = h('form', { class: 'grid card' }, h('h3', { class: 'wide' }, '비밀번호 바꾸기'),
+      field('현재 비밀번호', h('input', { name: 'old_password', type: 'password', autocomplete: 'current-password', required: true })),
+      field('새 비밀번호 (8자 이상)', h('input', { name: 'new_password', type: 'password', autocomplete: 'new-password', required: true, minlength: 8 })),
+      h('p', { class: 'muted wide' }, '바꾸면 다른 기기에서 로그인한 상태는 모두 끊겨요.'),
+      h('div', { class: 'row wide' }, h('button', { class: 'primary', type: 'submit' }, '비밀번호 바꾸기')));
+    pf.addEventListener('submit', (ev) => { ev.preventDefault(); guarded(pf.querySelector('[type=submit]'), async () => {
+      await api('auth/password', { method: 'POST', body: formData(pf) }); pf.reset(); toast('비밀번호를 바꿨어요.'); }); });
+    box.append(pf);
+    box.append(h('div', { class: 'card' }, h('h3', {}, '내 자료 내려받기'), h('p', {}, h('a', { href: '/api/export', download: 'plan-do-see-export.json' }, '내 자료 파일 하나로 내려받기 (JSON)'))));
+    const df = h('form', { class: 'grid card danger' }, h('h3', { class: 'wide' }, '계정 지우기'),
+      h('p', { class: 'wide' }, '계정을 지우면 내 계획·기록·돌아보기·5일 관찰 자료가 모두 함께 지워지고 되돌릴 수 없어요.'),
+      field('비밀번호 확인', h('input', { name: 'password', type: 'password', autocomplete: 'current-password', required: true })),
+      h('div', { class: 'row wide' }, h('button', { type: 'submit' }, '계정과 자료 모두 지우기')));
+    df.addEventListener('submit', (ev) => { ev.preventDefault(); guarded(df.querySelector('[type=submit]'), async () => {
+      if (!confirm('정말 계정과 모든 자료를 지울까요? 되돌릴 수 없어요.')) return;
+      await api('auth/account', { method: 'DELETE', body: formData(df) }); showLogin(); toast('계정을 지웠어요.'); }); });
+    box.append(df);
+    return box;
+  }
+
+  // ---------- 로그인 / 가입 / 로그아웃 ----------
+  const loginBox = document.getElementById('login');
+  const shell = document.getElementById('shell');
+  const who = document.getElementById('who');
+  let signupMode = false;
+  function setMode(signup) {
+    signupMode = signup;
+    document.getElementById('login-title').textContent = signup ? '계정 만들기' : '로그인';
+    document.getElementById('login-submit').textContent = signup ? '가입하기' : '로그인';
+    document.getElementById('login-toggle').textContent = signup ? '이미 계정이 있어요 (로그인)' : '계정 만들기';
+    document.querySelector('#loginform [name=password]').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
+    document.getElementById('login-err').textContent = '';
+  }
+  function showLogin() {
+    loginBox.hidden = false; shell.hidden = true; who.hidden = true;
+    app.replaceChildren(); document.getElementById('side').replaceChildren(); closeDialogQuietly();
+    calCache = null; lastHash = null; sameView = false;
+    setMode(false);
+  }
+  function showApp(user) {
+    loginBox.hidden = true; shell.hidden = false; who.hidden = false;
+    document.getElementById('whoname').textContent = user.username + ' 님';
+    render();
+  }
+  document.getElementById('login-toggle').addEventListener('click', () => setMode(!signupMode));
+  document.getElementById('loginform').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.target, err = document.getElementById('login-err'), btn = document.getElementById('login-submit');
+    err.textContent = ''; btn.disabled = true;
+    try {
+      const r = await api(signupMode ? 'auth/signup' : 'auth/login', { method: 'POST', body: formData(f) });
+      f.reset(); showApp(r.user);
+    } catch (e) { err.textContent = e.message; } finally { btn.disabled = false; }
+  });
+  document.getElementById('logout').addEventListener('click', async () => {
+    try { await api('auth/logout', { method: 'POST', body: {} }); } catch (e) { /* 이미 끊겼어도 화면은 로그인으로 */ }
+    showLogin();
+  });
+  (async () => {
+    try { const r = await api('auth/me'); if (r.user) return showApp(r.user); } catch (e) { /* 아래에서 로그인 화면 */ }
+    showLogin();
+  })();
 })();
