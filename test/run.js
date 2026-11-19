@@ -29,7 +29,7 @@ async function main() {
   const clientA = mkClient();
   const call = clientA.call;
   const PW = 'test-pw-' + Math.random().toString(36).slice(2, 10);
-  const su = await call('auth/signup', 'POST', { username: 'tester_a', password: PW });
+  const su = await call('auth/signup', 'POST', { username: 'tester_a', password: PW, password_confirm: PW });
   ok(su.status === 200, 'T07 가입 후 바로 로그인 상태가 된다');
 
   // ---- 카드 1+2: 계획(할 일) — 계획과 할 일은 같은 것 ----
@@ -149,13 +149,13 @@ async function main() {
   const idOf = async (name) => (await db.query('select id from users where username = $1', [name]))[0].id;
 
   // 가입·로그인·로그아웃
-  const suB = await callB('auth/signup', 'POST', { username: 'tester_b', password: PW }); // 같은 비밀번호로 두 번째 계정
+  const suB = await callB('auth/signup', 'POST', { username: 'tester_b', password: PW, password_confirm: PW }); // 같은 비밀번호로 두 번째 계정
   ok(suB.status === 200, 'C94 새 계정을 만들 수 있다');
   ok((await callB('auth/me')).data.user.username === 'tester_b', 'C95 가입한 계정으로 로그인 상태가 확인된다');
-  const dup = await anon('auth/signup', 'POST', { username: 'TESTER_A', password: PW });
+  const dup = await anon('auth/signup', 'POST', { username: 'TESTER_A', password: PW, password_confirm: PW });
   ok(dup.status === 409, 'C98 같은 아이디(대소문자 달라도)로 두 번 가입되지 않는다');
-  ok((await anon('auth/signup', 'POST', { username: 'ab', password: PW })).status === 400, '너무 짧은 아이디는 거절');
-  ok((await anon('auth/signup', 'POST', { username: 'shortpw_user', password: '1234' })).status === 400, '너무 짧은 비밀번호는 거절');
+  ok((await anon('auth/signup', 'POST', { username: 'ab', password: PW, password_confirm: PW })).status === 400, '너무 짧은 아이디는 거절');
+  ok((await anon('auth/signup', 'POST', { username: 'shortpw_user', password: '1234', password_confirm: '1234' })).status === 400, '너무 짧은 비밀번호는 거절');
   const wrongPw = await anon('auth/login', 'POST', { username: 'tester_a', password: 'wrong-password' });
   const noUser = await anon('auth/login', 'POST', { username: 'nobody_here', password: 'wrong-password' });
   ok(wrongPw.status === 401 && noUser.status === 401 && wrongPw.data.error === noUser.data.error, 'C99 비밀번호가 틀렸을 때와 아이디가 없을 때 안내 문구·상태가 같다');
@@ -189,8 +189,11 @@ async function main() {
   await clientA3.call('auth/login', 'POST', { username: 'tester_a', password: PW });
   const cookieA3 = clientA3.jar.cookie;
   const NEWPW = PW + '-new';
-  ok((await call('auth/password', 'POST', { old_password: 'wrong-password', new_password: NEWPW })).status === 401, '현재 비밀번호가 틀리면 바꿀 수 없다');
-  ok((await call('auth/password', 'POST', { old_password: PW, new_password: NEWPW })).status === 200, '비밀번호를 바꿀 수 있다');
+  ok((await call('auth/password', 'POST', { old_password: 'wrong-password', new_password: NEWPW, new_password_confirm: NEWPW })).status === 401, '현재 비밀번호가 틀리면 바꿀 수 없다');
+  ok((await call('auth/password', 'POST', { old_password: PW, new_password: NEWPW, new_password_confirm: NEWPW })).status === 200, '비밀번호를 바꿀 수 있다');
+  ok((await anon('auth/signup', 'POST', { username: 'mismatch_user', password: PW, password_confirm: PW + 'x' })).status === 400, '가입할 때 두 비밀번호가 다르면 거절된다');
+  ok((await anon('auth/signup', 'POST', { username: 'noconfirm_user', password: PW })).status === 400, '비밀번호 확인 칸이 없으면 가입이 거절된다');
+  ok((await call('auth/password', 'POST', { old_password: NEWPW, new_password: NEWPW + 'z', new_password_confirm: NEWPW + 'y' })).status === 400, '비밀번호를 바꿀 때 두 새 비밀번호가 다르면 거절된다');
   ok((await anon('tasks', 'GET', undefined, { Cookie: cookieA3 })).status === 401, 'C114 비밀번호를 바꾸면 이전에 발급한 세션 값이 더는 통하지 않는다');
   ok((await call('tasks')).status === 200, '비밀번호를 바꾼 기기는 새 세션으로 계속 쓸 수 있다');
   ok((await anon('auth/login', 'POST', { username: 'tester_a', password: PW })).status === 401, '옛 비밀번호로는 로그인되지 않는다');

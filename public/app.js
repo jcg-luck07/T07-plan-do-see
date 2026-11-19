@@ -706,9 +706,11 @@
     const pf = h('form', { class: 'grid card' }, h('h3', { class: 'wide' }, '비밀번호 바꾸기'),
       field('현재 비밀번호', h('input', { name: 'old_password', type: 'password', autocomplete: 'current-password', required: true })),
       field('새 비밀번호 (8자 이상)', h('input', { name: 'new_password', type: 'password', autocomplete: 'new-password', required: true, minlength: 8 })),
+      field('새 비밀번호 한 번 더 (똑같이)', h('input', { name: 'new_password_confirm', type: 'password', autocomplete: 'new-password', required: true, minlength: 8 })),
       h('p', { class: 'muted wide' }, '바꾸면 다른 기기에서 로그인한 상태는 모두 끊겨요.'),
       h('div', { class: 'row wide' }, h('button', { class: 'primary', type: 'submit' }, '비밀번호 바꾸기')));
     pf.addEventListener('submit', (ev) => { ev.preventDefault(); guarded(pf.querySelector('[type=submit]'), async () => {
+      if (pf.new_password.value !== pf.new_password_confirm.value) throw new Error('새 비밀번호가 서로 달라요. 두 칸에 똑같이 입력하세요.');
       await api('auth/password', { method: 'POST', body: formData(pf) }); pf.reset(); toast('비밀번호를 바꿨어요.'); }); });
     box.append(pf);
     box.append(h('div', { class: 'card' }, h('h3', {}, '내 자료 내려받기'), h('p', {}, h('a', { href: '/api/export', download: 'plan-do-see-export.json' }, '내 자료 파일 하나로 내려받기 (JSON)'))));
@@ -735,6 +737,10 @@
     document.getElementById('login-toggle').textContent = signup ? '이미 계정이 있어요 (로그인)' : '계정 만들기';
     document.querySelector('#loginform [name=password]').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
     document.getElementById('login-err').textContent = '';
+    const row = document.getElementById('confirm-row');
+    row.hidden = !signup;
+    row.querySelector('input').required = signup;
+    row.querySelector('input').value = '';
   }
   function showLogin() {
     loginBox.hidden = false; shell.hidden = true; who.hidden = true;
@@ -753,6 +759,7 @@
     const f = ev.target, err = document.getElementById('login-err'), btn = document.getElementById('login-submit');
     err.textContent = ''; btn.disabled = true;
     try {
+      if (signupMode && f.password.value !== f.password_confirm.value) throw new Error('비밀번호가 서로 달라요. 두 칸에 똑같이 입력하세요.');
       const r = await api(signupMode ? 'auth/signup' : 'auth/login', { method: 'POST', body: formData(f) });
       f.reset(); showApp(r.user);
     } catch (e) { err.textContent = e.message; } finally { btn.disabled = false; }
