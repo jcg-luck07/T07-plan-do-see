@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --env-file-if-exists=.env.local server.js",
     "test": "node --env-file-if-exists=.env.local test/run.js",
+    "import-t06": "node --env-file-if-exists=.env.local scripts/import-t06.js",
     "claim": "node --env-file-if-exists=.env.local scripts/claim-legacy.js"
   },
   "engines": {
